@@ -975,10 +975,14 @@ void Gameoverscene() {
 
 int main()
 {
+#pragma region 기본 함수 및 덱 셔플 함수 호출
 	srand(time(NULL));
 	CursorView();
 	FillDeck();
 	Shuffle();
+#pragma endregion
+
+	
 
 	system("mode con cols=80 lines=30");
 
@@ -1072,6 +1076,7 @@ int main()
 		 // Slime의 턴이 0보다 작아지면 공격합니다.
 		 if (Slime.turns < 0) {
 			 MonsterAttack(&Slime, &_player, player_defended);
+			 player_defended = 0;
 		 }
 		 
 	}
