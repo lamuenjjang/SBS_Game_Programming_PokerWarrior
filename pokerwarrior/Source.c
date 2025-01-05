@@ -10,9 +10,11 @@ static int increase_done = 3;
 // 방어 선택 여부 확인 변수
 static int player_defended = 0;
 // 이벤트 제어 변수
-static int event = 0;
+static int event = -1;
 // 이벤트 진행 턴수를 설정합니다.
-static int event_ing = 10;
+static int event_ing = 0;
+// 현재 진행되고 있는 턴
+static int turns = 1;
 #pragma endregion
 
 #pragma region 기본 함수 선언
@@ -301,32 +303,37 @@ void Cutdeck(struct card* deck, struct Player *p) {
 
 #pragma region 이벤트 함수
 
-
+// 이벤트 1 : 몬스터가 공격까지 남은 턴을 비공개 처리합니다.
+// 5턴 지속
 void UnknownTurns(struct monster *m) {
 	gotoxy(52, 7);
 	SetColor(4);
 	printf(" 적의 의도를 알수 없다..");
 	SetColor(15);
 	gotoxy(52, 8);
-	printf(" 적 턴이 무작위로 변하며,");
+	printf(" 5턴동안 적의 남은 턴을");
 	gotoxy(52, 9);
-	printf(" 남은 턴을 알 수 없습니다.");
-
-	event_ing = 10;
+	printf(" 알수 없습니다.(무작위)");			
+	
+	event = 0;
+	event_ing = 5;
 	m->turns = rand() % 3;
 }
 
 void hideTurns()
 {
-	if (event_ing > 0) {
+	if (event_ing > 0 && event == 0) {
 		gotoxy(38, 6);
 		printf("? ? ? ? ? ? ");
 	}
-	event_ing--;
+	else if (event_ing == 0)
+		event = -1;
 }
 
+// 이벤트 2 : 몬스터의 공격력이 2배가 됩니다.
+// 턴 즉시 발동
 void TwiceMatk(struct monster* m) {
-
+	
 	m->atk = m->atk * 2;
 	gotoxy(52, 7);
 	SetColor(5);
@@ -336,9 +343,16 @@ void TwiceMatk(struct monster* m) {
 	printf(" 슬라임의 공격력이 두배가");
 	gotoxy(52, 9);
 	printf(" 됩니다.");
+
+	event_ing = 1;
+	event = 1;
 }
 
+// 이벤트 3 : 플레이어의 공격력이 절반이 됩니다.
+// 턴 즉시 발동
 void HalfAtk(struct Player* p) {
+	
+
 	p->atk = p->atk / 2;
 
 	gotoxy(52, 7);
@@ -349,18 +363,57 @@ void HalfAtk(struct Player* p) {
 	printf(" 플레이어의 공격력이");
 	gotoxy(52, 9);
 	printf(" 절반이 됩니다.");
+
+	event_ing = 1;
+	event = 2;
 }
 
+// 턴 즉시 발동 함수들을 제어하는 함수입니다.
+void not_ing_event_end() {
+	if (event == 1 || event == 2 || event == 3) {
+		event = -1;
+	}
+}
+
+// 이벤트 4 : 몬스터가 체력을 50 회복합니다.
 void RegenHP(struct monster * m) {
+	event = 3;
 	m->hp = m->hp + 50;
+	if (m->hp > 500)
+		m->hp = 500;
 	gotoxy(52, 7);
 	SetColor(3);
 	printf(" 슬라임이 자연치유하였다.");
 	SetColor(15);
 	gotoxy(52, 8);
-	printf(" 슬라임의 체력을 50");
+	printf(" 슬라임이 체력을 50");
 	gotoxy(52, 9);
 	printf(" 회복합니다.");
+}
+
+// 이벤트 5 : 플레이어의 능력치 강화 횟수가 0회가 됩니다.
+// 3턴 지속
+void NOIncrease() {
+	
+	gotoxy(52, 7);
+	SetColor(9);
+	printf(" 슬라임의 저주에 걸렸다..");
+	SetColor(15);
+	gotoxy(52, 8);
+	printf(" 능력치 강화 횟수가 3턴");
+	gotoxy(52, 9);
+	printf(" 동안 0회가 됩니다.");
+
+	event = 4;
+	event_ing = 3;
+}
+
+void ZeroIncrease() {
+	if (event_ing > 0 && event == 4) {
+		increase_done = 0;
+	}
+	else if (event_ing == 0)
+		event = -1;
 }
 #pragma endregion
 
@@ -383,7 +436,8 @@ int is_Critical(int Cri) {
 // 플레이어 공격시 호출하는 함수
 void PlayerAttack(struct Player*p, struct monster*m) {
 	int tmp;
-	tmp = p->atk * is_Critical(p->cri);
+	int Critical = is_Critical(p->cri);
+	tmp = p->atk * Critical;
 	m->hp = (int)m->hp - tmp;
 	// 능력치 증가 횟수 초기화
 	increase_done = 3;
@@ -391,7 +445,14 @@ void PlayerAttack(struct Player*p, struct monster*m) {
 	m->turns--;
 
 	gotoxy(52, 5);
-	printf(" %d 의 피해를 주었습니다.", tmp);
+	if (Critical == 1) {
+		printf(" %d 의 피해를 주었습니다.", tmp);
+	}
+	else if (Critical == 2) {
+		SetColor(4);
+		printf(" %d 의 치명타를 입혔습니다.", tmp);
+		SetColor(15);
+	}
 	gotoxy(52, 6);
 	printf(" 상대의 남은 체력 %d", m->hp);
 }							
@@ -404,14 +465,15 @@ void MonsterAttack(struct monster *m, struct Player* p,int defend) {
 		p->hp = p->hp - tmp;
 	}
 	else if (defend == 2) {
-		tmp = p->hp + p->def - m->atk;
-		if (tmp < p->hp) {
-			p->hp = tmp;
+		tmp = m->atk  - p->def;
+	
+		if (tmp > 0) {
+			p->hp = p->hp - tmp;
 		}
 	}
 	m->turns = 4;
 	gotoxy(52, 5);
-	printf(" %d 의 피해를 입었습니다", (int)m->atk);
+	printf(" %d 의 피해를 입었습니다", tmp);
 	gotoxy(52, 6);
 	printf(" 당신의 남은 체력 %d", p->hp);
 }
@@ -773,36 +835,54 @@ void Slimeview() {
 void P_status(struct Player player) {
 	gotoxy(8, 2);
 	if (player.hp < 10) {
+		SetColor(4);
 		printf("hp = %d  / 100", player.hp);
 	}
-	else {
+	else if (player.hp < 50){
+		SetColor(6);
 		printf("hp = %d / 100", player.hp);
 	}
+	else {
+		SetColor(10);
+		printf("hp = %d / 100", player.hp);
+	}
+	SetColor(15);
 	gotoxy(11, 5);
 	printf("Atk: %.2f", player.atk);
 	gotoxy(11, 6);
 	printf("Def: %.2f", player.def);
 	gotoxy(11, 7);
 	printf("Cri: %.2f", player.cri);
+	
 
 }
 
 void M_status(struct monster monster) {
 	gotoxy(30, 2);
 	if (monster.hp < 10) {
+		SetColor(4);
 		printf("hp = %d  / 500", monster.hp);
 	}
-	else {
+	else if(monster.hp < 100) {
+		SetColor(6);
 		printf("hp = %d / 500", monster.hp);
 	}
-	
+	else {
+		SetColor(10);
+		printf("hp = %d / 500", monster.hp);
+	}
+	SetColor(15);
 	gotoxy(38, 5);
 	printf("Atk: %.2f", monster.atk);
 	gotoxy(38, 6);
 	if (monster.turns > 0)
 		printf("%d turn left", monster.turns);
-	else if (monster.turns == 0)
+	else if (monster.turns == 0) {
+		SetColor(12);
 		printf("now Attack!!");
+		SetColor(15);
+	}
+		
 	
 }
 
@@ -815,7 +895,7 @@ void increaseUI(int increase) {
 	}
 	else if (increase == 0) {
 		SetColor(4);
-		printf("(0 / 3)");
+		printf(" (0 / 3)");
 		SetColor(15);
 	}
 }
@@ -831,6 +911,13 @@ void KeyUI() {
 	printf("│ L : 방어 │");
 	gotoxy(52, 15);
 	printf("└━━━━━━━━━━┘");
+}
+
+void nowTurns(int turns) {
+	gotoxy(2, 1);
+	SetColor(8);
+	printf("{ %d turn }", turns);
+	SetColor(15);
 }
 
 void Victoryscene() {
@@ -888,6 +975,7 @@ void Gameoverscene() {
 
 int main()
 {
+	srand(time(NULL));
 	CursorView();
 	FillDeck();
 	Shuffle();
@@ -900,18 +988,42 @@ int main()
 	Cutdeck(&Card, &_player);
 
 	while (_player.hp > 0 && Slime.hp > 0) {
+#pragma region 포커 함수 호출
 		Shuffle();
 		Cutdeck(&Card, &_player);
 		bubble(&_player.p_card);
-		Pokercard(&_player.p_card);
-		ShowJokbo(_player.p_card);
-		GameMap();
+#pragma endregion
 
-		GrowUI();
-		increaseUI(increase_done);
-		KeyUI();
+#pragma region 이벤트 제어
+
+		if (turns % 5 == 0 && event == -1) {
+			int randomEvent = rand() % 5;
+
+			switch (randomEvent)
+			{
+			case 0:
+				UnknownTurns(&Slime);
+				break;
+			case 1:
+				TwiceMatk(&Slime);
+				break;
+			case 2:
+				HalfAtk(&_player);
+				break;
+			case 3:
+				RegenHP(&Slime);
+				break;
+			case 4:
+				NOIncrease();
+				break;
+			}
+		}
+
 		
 
+#pragma endregion
+
+#pragma region 플레이어 & 몬스터 UI 호출
 		Pview();
 		P_status(_player);
 		if (Slime.hp > 0)
@@ -919,13 +1031,22 @@ int main()
 			Slimeview();
 			M_status(Slime);
 		}
-		// TwiceMatk(&Slime);
-		// UnknownTurns(&Slime);
-		// hideTurns();
-		// HalfAtk(&_player);
-		// RegenHP(&Slime);
-		char key = _getch();
+		hideTurns();
+#pragma endregion
+
+#pragma region UI 함수 호출
+		Pokercard(&_player.p_card);
+		ShowJokbo(_player.p_card);
+		GameMap();
+
+		GrowUI();
+		ZeroIncrease();
+		increaseUI(increase_done);
+		KeyUI();
+		nowTurns(turns);
+#pragma endregion
 		
+		char key = _getch();
 		system("cls");
 		
 		// A/D/C/K/L 키 값 입력시 switch 문의 각 케이스가 실행됩니다.
@@ -937,8 +1058,14 @@ int main()
 		 case 99	: IncreaseCri(checkJokbo(_player.p_card), &_player);
 			 break;
 		 case 107	: PlayerAttack(&_player, &Slime);
+			 turns++;
+			 event_ing--;
+			 not_ing_event_end();
 			 break;
 		 case 108: player_defended = Defend(&Slime);
+			 turns++;
+			 event_ing--;
+			 not_ing_event_end();
 			 break;
 		 }
 	
@@ -946,7 +1073,11 @@ int main()
 		 if (Slime.turns < 0) {
 			 MonsterAttack(&Slime, &_player, player_defended);
 		 }
+		 
 	}
+
+	// 플레이어 또는 몬스터의 체력이 0보다 작아지면
+	// 승리 화면 또는 패배 화면을 출력합니다.
 	system("cls");
 	if (Slime.hp < 0) {
 		Victoryscene();
